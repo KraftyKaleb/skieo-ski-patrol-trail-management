@@ -1,8 +1,14 @@
+***AI GENERATED CONTENT DISCLAIMER: I've had fun playing Ski-E-O so far, and this project is a fun test of claude code's skill. I am in no way fully confident that the mod will be free of all bugs or security issues, so use it at your own risk. I (human Kaleb) have tested the project against a local save and have not observed anything particularly worrisome. Have fun and let me know if you find any issues :)***
+
 # Ski patrol (`ski-patrol`)
 
-A Ski-E-O! mod that adds a ski patrol. The patrol watches the weather, the snow and
+A Ski-E-O! mod that adds a ski patrol trail management function. The patrol watches the weather, the snow and
 the snowcats, closes runs when they're unsafe and reopens them when conditions
 recover. It works on every resort, including the stock maps.
+
+## Screenshots
+<img width="531" height="248" alt="image" src="https://github.com/user-attachments/assets/50c30023-4bad-4b98-a18e-65daa905a9a0" />
+<img width="525" height="305" alt="image" src="https://github.com/user-attachments/assets/87642b49-8d59-49c9-a2b8-611915187838" />
 
 ## What it does
 
@@ -134,32 +140,6 @@ Edit `Scripts/config.lua` in the installed mod folder, then run `skipatrol reloa
 | `units` | `'auto'` | Units in messages: `'auto'` (the game's Measurement System), `'metric'` or `'imperial'`. |
 | `trail_panel` | `true` | Show the Ski patrol section in the trail panel. Set `false` (and restart the game) if it causes any trouble. |
 | `tick_ms` | 2000 | Real milliseconds between patrol checks. |
-
-## Not tested in the game yet
-
-This was written against what the game and the skieomod loader's source expose (the
-game's trail, time, weather, grooming and snow systems) and checked with automated
-tests against a fake game. The snow reader's fingerprints were confirmed against the
-CL8198 `skieogame.exe`, but its memory reads have only run against a fake snow cache. **It hasn't run inside Ski-E-O! yet.** Please check:
-
-1. **Startup:** the UE4SS log shows `[Ski Patrol] 0.4.0 loaded`.
-2. **The report:** press F9 in a resort. Each run should be listed with a believable
-   steepness and length, and the weather should match the game's. If no runs are
-   listed or you see `[Ski Patrol] error:`, send the log lines.
-3. **Closing works:** force a blizzard (or set `storm_pitch_deg = 0` and wait for
-   one). Runs should show as closed in the game's UI and guests should stop taking
-   them. Check that skiers already on a run don't get stuck.
-4. **Your closures:** close a run yourself, then confirm the patrol never reopens it.
-5. **Grooming:** watch a snowcat groom a run. If runs stay closed all day because
-   grooming jobs never finish, set `grooming = false`.
-6. **Snow cover:** the report should say readings are available, with cover values
-   close to the snow depth the game shows.
-7. **Save and load** with a patrol closure, then confirm it still reopens later.
-8. **Trail panel:** open a run the patrol closed. The Ski patrol section should sit
-   under the Open/Closed switch (or at the end of the Edit tab) with the reason.
-   Switch a condition on for that run, then reopen the run with the game's Open/Closed
-   switch and check the text changes. Switch conditions off and on again and check
-   the labels and the saved `run-settings.txt` follow.
 
 ## How it works
 
