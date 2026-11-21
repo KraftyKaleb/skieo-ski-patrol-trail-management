@@ -1,6 +1,6 @@
 ***AI GENERATED CONTENT DISCLAIMER: I've had fun playing Ski-E-O so far, and this project is a fun test of claude code's skill. I am in no way fully confident that the mod will be free of all bugs or security issues, so use it at your own risk. I (human Kaleb) have tested the project against a local save and have not observed anything particularly worrisome. Have fun and let me know if you find any issues :)***
 
-# Ski patrol (`ski-patrol`)
+# Ski Patrol Trail Management (`ski-patrol-trail-management`)
 
 A Ski-E-O! mod that adds a ski patrol trail management function. The patrol watches the weather, the snow and
 the snowcats, closes runs when they're unsafe and reopens them when conditions
@@ -34,8 +34,7 @@ more of new snow (wet snow).
 **Steepness** is measured from the run's own geometry: the steepest average pitch
 over any 20 m section. The game's difficulty rating is used too, where it's
 available. Only a run's **first segment** is measured: reading the rest of a
-multi-segment run crashes the game on build CL8198 with UE4SS 4.0 (fixed in 0.1.1,
-see Changes below).
+multi-segment run crashes the game on build CL8198 with UE4SS 4.0..
 
 **Your closures win.** The patrol never opens a run you closed. If you reopen a
 run the patrol closed, it leaves that run alone for 24 game hours.
@@ -45,7 +44,7 @@ condition you switched on for that run. Open a run's panel and look under the ga
 Open/Closed switch for the **Ski patrol** section. Under *Close this run automatically
 for:* there is one switch each for avalanche danger, blizzard, thin snow, grooming and
 extreme cold; click one to turn it on or off. The choices are kept in
-`%LOCALAPPDATA%\Ski-E-O-Mod-ski-patrol-run-settings.txt`, outside the mod folder, so updates keep them.
+`%LOCALAPPDATA%\Ski-E-O-Mod-ski-patrol-trail-management-run-settings.txt`, outside the mod folder, so updates keep them.
 
 There is no extra open/close button: **the game's own Open/Closed switch is the one to use.**
 The section's text says why the patrol closed the run and roughly when it expects to reopen it,
@@ -63,7 +62,7 @@ the patrol closed with the game's switch, the patrol leaves it alone for 24 game
 - The `avalanche`, `storm`, `thin_cover`, `grooming` and `cold` settings in `config.lua` still turn a rule off for every run.
 
 **Restarts.** The patrol remembers which closures were its own and the new-snow
-model in `%LOCALAPPDATA%\Ski-E-O-Mod-ski-patrol-patrol-closures.txt`, outside the mod folder so updates keep it (0.2.2 and older kept `patrol-closures.txt` in the mod folder; it is read once and then left alone). After you load a save, it still
+model in `%LOCALAPPDATA%\Ski-E-O-Mod-ski-patrol-trail-management-patrol-closures.txt`, outside the mod folder so updates keep it (the mod was called `ski-patrol` before it was renamed; on the first start it reads that old name's `patrol-closures.txt` and `run-settings.txt` once and then uses the new names). After you load a save, it still
 reopens its runs when conditions recover.
 
 ## Controls
@@ -77,7 +76,7 @@ reopens its runs when conditions recover.
 Every closure and reopening goes in the log with its reason. A report looks like this:
 
 ```text
-[Ski Patrol] Report (version 0.4.0)
+[Ski Patrol] Report (version 0.1.0)
 [Ski Patrol]   Weather: blizzard, -9 °C at the top. New snow (model): 25 cm. Avalanche danger: 3 (considerable).
 [Ski Patrol]   Snow cover readings: available (ok)
 [Ski Patrol]   "Bunny Hill": 6° steepest, 300 m, cover 120 cm. open
@@ -94,10 +93,10 @@ This is a script mod for Z's Mod Loader (a UE4SS mod, `mod.ini` + `Scripts/main.
 mapmod's sandboxed API can't open or close runs, but UE4SS can call the game's own run
 closure (the same switch you use in the game's UI).
 
-Install it from the Mods menu / Mod Manager, or by hand: unzip `ski-patrol-<release>.zip` into
-`<game>\mods` so you get `<game>\mods\ski-patrol\mod.ini`, and switch it on in the Mods menu
+Install it from the Mods menu / Mod Manager, or by hand: unzip `ski-patrol-trail-management-<release>.zip` into
+`<game>\mods` so you get `<game>\mods\ski-patrol-trail-management\mod.ini`, and switch it on in the Mods menu
 (or add an empty `enabled.txt` to the folder). It loads when the game starts. The mod's `Id` and
-folder name are `ski-patrol`; keep them.
+folder name are `ski-patrol-trail-management`; keep them.
 
 **Snow cover readings** come from a small native library that ships with the mod,
 `Native/PatrolSnow.dll` (source and build line in `Native/`). Lua can't read the game's
@@ -106,7 +105,7 @@ Before it touches any memory it checks four exact code fingerprints of the game'
 snow cache routines, so on a game build it doesn't recognise it refuses and the
 thin-cover rule turns itself off (the report and the trail panel say so). Nothing in the
 game is changed. It talks to Lua through three small files in `%LOCALAPPDATA%`
-(`Ski-E-O-Mod-ski-patrol-snow.job`, `.bin`, `.status`). The snow reading code is derived
+(`Ski-E-O-Mod-ski-patrol-trail-management-snow.job`, `.bin`, `.status`). The snow reading code is derived
 from the skieomod loader's sampler (BSD-3-Clause, see `Native/LICENSE-skieomod`); you do
 not need that loader.
 
@@ -171,49 +170,3 @@ wherever the game shows closed runs. The trail panel finds a run by its name, so
 two runs with the same name show a note asking you to rename one.
 
 License: MIT.
-
-## Changes
-
-**0.4.0** Per-run switches in the trail panel for which conditions may close that run, all
-off by default (so after updating, nothing closes until you switch conditions on for each run).
-The extra Reopen / "Let the patrol close it again" button is gone; use the game's Open/Closed switch.
-Settings are saved in `run-settings.txt` next to the closure memory.
-
-**0.3.2** The game build is CL8198 (earlier notes said CL8119 by mistake): `mod.ini`
-`GameVersion` and the README now say so. No code changed. The snow reader never checked
-a build number; it only matches code fingerprints, which were confirmed against the
-installed game's `skieogame.exe`.
-
-**0.3.1** Messages and the report use the units you chose in the game (Options >
-Measurement System): inches, °F and feet when imperial; cm, °C and metres when metric.
-Automatic follows your system language (en-US shows imperial). `units = 'metric'` or
-`'imperial'` in `config.lua` overrides it.
-
-**0.3.0** Thin-snow closures now work without any other mod. New `Native/PatrolSnow.dll`
-reads the game's snow depth along each run, after matching the game build. A run closes
-when its thinnest tenth has under 25 cm of snow (so half a bare run closes it) and
-reopens at 35 cm. Version 0.2.x needed the Custom Map loader for this, which isn't
-installed on a Z's Mod Loader setup. `thin_cover = false` disables the reader.
-
-**0.2.3** Brought in line with the Ski-E-O! developer modding FAQ: `mod.ini` replaces
-`custom-mod.json`; Id = folder = `ski-patrol`; F9 and Ctrl+F9 are listed under `[Keybinds]`
-with `ManagedKeybinds = true` so players can rebind them in the Mods menu; the saved
-closures moved out of the mod folder; switching the mod off in the Mods menu pauses the
-patrol (reopening its runs) without a restart.
-
-**0.2.2** (older) Without a snow reader the thin-snow rule can't work, so the trail panel now says so on open runs instead of implying the patrol checks snow.
-
-**0.2.1** The trail panel section now shows the game's own closures (not enough
-snow, avalanche danger, rope) instead of calling those runs open.
-
-**0.2.0** Added the Ski patrol section to the trail panel: why a run is closed,
-when it should reopen, a **Reopen anyway** button, and **Let the patrol close it
-again** for runs you reopened. Setting `trail_panel = false` turns it off.
-
-**0.1.1** Fixed the game crashing a few seconds after loading a save. Version 0.1.0
-read each run's extra segments (`AdditionalCurves`), and on build CL8198 with UE4SS
-4.0 that array comes back without its element type, so UE4SS read a null pointer
-(`EXCEPTION_ACCESS_VIOLATION reading address 0x34` in `TArray:ForEach`). Any save
-with a run made of more than one segment crashed. The patrol now measures only the
-first segment of each run.
-

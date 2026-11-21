@@ -39,6 +39,15 @@ function Support.new(scripts_dir)
         return root .. 'data/' .. name
     end
 
+    -- The file an earlier Id of this mod used (the mod was called `ski-patrol` before it was renamed).
+    function self.state_file_of(old_id, name)
+        local base = os.getenv and os.getenv('LOCALAPPDATA')
+        if base and base ~= '' then
+            return base:gsub('[/\\]+$', '') .. '/Ski-E-O-Mod-' .. old_id .. '-' .. name
+        end
+        return nil
+    end
+
     -- Where older releases kept the file (inside the mod folder).
     function self.legacy_file(name, subfolder)
         return root .. (subfolder or '') .. name

@@ -11,7 +11,7 @@ local Native = require('patrol_native')
 local Store = require('patrol_store')
 local Support = require('modsupport')
 
-local VERSION = '0.4.0'
+local VERSION = '0.1.0'
 local source = debug.getinfo(1, 'S').source:match('^@(.*)$') or ''
 local SCRIPTS = source:match('^(.*[/\\])[^/\\]+$') or './'
 local ROOT = SCRIPTS:match('^(.*[/\\])Scripts[/\\]$') or SCRIPTS
@@ -19,6 +19,10 @@ local Mod = Support.new(SCRIPTS)
 -- Saved outside the mod folder (see modsupport.lua); 0.2.2 and older kept it in the mod folder.
 local STATE_FILE = Mod.state_file('patrol-closures.txt')
 local LEGACY_STATE_FILE = Mod.legacy_file('patrol-closures.txt')
+-- The mod used to be called `ski-patrol`: its saved closures and run settings carry over once.
+local OLD_ID = 'ski-patrol'
+local OLD_STATE_FILE = Mod.state_file_of(OLD_ID, 'patrol-closures.txt')
+local OLD_SETTINGS_FILE = Mod.state_file_of(OLD_ID, 'run-settings.txt')
 -- Which conditions may close each run (chosen in the trail panel; all off until you switch them on).
 local SETTINGS_FILE = Mod.state_file('run-settings.txt')
 
@@ -97,7 +101,9 @@ local function world_changed()
     Patrol.records = Store.load(STATE_FILE)
     Patrol.settings = Patrol.load_settings()
     local current = io.open(STATE_FILE, 'r')
-    if current then current:close() else Patrol.records = Store.load(LEGACY_STATE_FILE) end   -- first start after 0.2.2
+    if current then current:close()
+    elseif OLD_STATE_FILE and io.open(OLD_STATE_FILE, 'r') then Patrol.records = Store.load(OLD_STATE_FILE)   -- first start after the rename
+    else Patrol.records = Store.load(LEGACY_STATE_FILE) end
 end
 
 local function save_records()
@@ -127,7 +133,10 @@ end
 -- Per-run conditions. Stored like the closure records: key, nothing, comma-separated reason ids.
 function Patrol.load_settings()
     local settings = {}
-    for key, record in pairs(Store.load(SETTINGS_FILE)) do
+    local path = SETTINGS_FILE
+    local own = io.open(SETTINGS_FILE, 'r')
+    if own then own:close() elseif OLD_SETTINGS_FILE then path = OLD_SETTINGS_FILE end   -- first start after the rename
+    for key, record in pairs(Store.load(path)) do
         local set, any = {}, false
         for _, id in ipairs(record.reasons) do
             if Rules.REASON_BY_ID[id] then set[id], any = true, true end

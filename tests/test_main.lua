@@ -1,8 +1,8 @@
 -- Loads Scripts/main.lua the way UE4SS does, against a fake Ski-E-O! world,
 -- and plays through a storm, a restart, player overrides and grooming.
 -- Self-contained: no game or loader code runs here.
-local SCRIPTS = MODS_DIR .. 'ski-patrol/Scripts/'
-local NATIVE_STATE = MODS_DIR .. 'Ski-E-O-Mod-ski-patrol-snow'   -- job, answer and status files (in LOCALAPPDATA)
+local SCRIPTS = MODS_DIR .. 'ski-patrol-trail-management/Scripts/'
+local NATIVE_STATE = MODS_DIR .. 'Ski-E-O-Mod-ski-patrol-trail-management-snow'   -- job, answer and status files (in LOCALAPPDATA)
 
 ------------------------------------------------------------------------
 -- Fake game
@@ -154,7 +154,7 @@ FindAllOf = function(name) return subsystems[name] and {subsystems[name]} or nil
 local function snow_depth(x, y) return y >= 40000 and 15 or 120 end
 local jobs = 0
 package.loadlib = function(path, symbol)
-    assert(path == MODS_DIR .. 'ski-patrol/Native/PatrolSnow.dll', 'snow DLL path: ' .. path)
+    assert(path == MODS_DIR .. 'ski-patrol-trail-management/Native/PatrolSnow.dll', 'snow DLL path: ' .. path)
     assert(symbol == 'patrol_snow')
     return function()
         jobs = jobs + 1
@@ -214,7 +214,7 @@ end
 -- Scenario
 ------------------------------------------------------------------------
 -- Per-run switches: runs 1-5 have every condition switched on, run 6 has none.
-local SETTINGS_PATH = MODS_DIR .. 'Ski-E-O-Mod-ski-patrol-run-settings.txt'
+local SETTINGS_PATH = MODS_DIR .. 'Ski-E-O-Mod-ski-patrol-trail-management-run-settings.txt'
 do
     local f = assert(io.open(SETTINGS_PATH, 'w'))
     for _, key in ipairs({'1@0,0', '2@0,100', '3@0,200', '4@0,300', '5@0,400'}) do
@@ -222,10 +222,24 @@ do
     end
     f:close()
 end
+-- Carried over from the old `ski-patrol` Id: settings written under that name are read on the first start.
+do
+    local f = assert(io.open(MODS_DIR .. 'Ski-E-O-Mod-ski-patrol-run-settings.txt', 'w'))
+    f:write('1@0,0\t\tcold\n'); f:close()
+    os.remove(SETTINGS_PATH)
+    local Early = start()
+    pump(1)
+    assert(Early.settings['1@0,0'] and Early.settings['1@0,0'].cold and not Early.settings['2@0,100'], 'old settings migrated')
+    f = assert(io.open(SETTINGS_PATH, 'w'))
+    for _, key in ipairs({'1@0,0', '2@0,100', '3@0,200', '4@0,300', '5@0,400'}) do
+        f:write(key, '\t\tavalanche,cold,grooming,storm,thin_cover\n')
+    end
+    f:close()
+end
 local Patrol = start()
-assert(logged('%[Ski Patrol%] 0%.4%.0 loaded'), 'startup message')
+assert(logged('%[Ski Patrol%] 0%.1%.0 loaded'), 'startup message')
 assert(keys.F9 and keys['F9+CONTROL'] and commands.skipatrol, 'hotkeys and console command')
-assert(shared['SkiEOMods.enabled.ski-patrol'] == true, 'live flag published under the folder name')
+assert(shared['SkiEOMods.enabled.ski-patrol-trail-management'] == true, 'live flag published under the folder name')
 
 -- Calm morning: only the thin run closes.
 pump(1)
@@ -249,7 +263,7 @@ for _, call in ipairs(calls) do assert(call.id ~= 4, 'player closure never touch
 assert(closed(4))
 
 -- The closures survive a restart of the game.
-local state_file = MODS_DIR .. 'Ski-E-O-Mod-ski-patrol-patrol-closures.txt'
+local state_file = MODS_DIR .. 'Ski-E-O-Mod-ski-patrol-trail-management-patrol-closures.txt'
 local f = assert(io.open(state_file)); local saved = f:read('a'); f:close()
 assert(saved:find('^2@0,100\t') or saved:find('\n2@0,100\t'), 'couloir recorded')
 assert(not saved:find('4@'), 'player closure not recorded')
@@ -419,7 +433,7 @@ assert(closed(4), 'but not yours')
 logs = {}
 keys.F9()
 pump(1, 0.1)
-assert(logged('Report %(version 0%.4%.0%) %(patrol paused%)'), 'report header')
+assert(logged('Report %(version 0%.1%.0%) %(patrol paused%)'), 'report header')
 assert(logged('"Closed By Me": .* closed by you'), 'report lists player closure')
 assert(logged('Snow cover readings: available'), 'report shows sampler')
 local out = {}
@@ -430,21 +444,21 @@ assert(closed(1) and logged('"Bunny Hill" closed: snowcat grooming'), 'resumed p
 assert(commands.skipatrol('skipatrol x', {'x'}, nil) == true)
 
 -- The Mods menu: a managed key press and the live switch.
-shared['SkiEOMods.keybind.managed.ski-patrol.Pause or resume patrol'] = true
+shared['SkiEOMods.keybind.managed.ski-patrol-trail-management.Pause or resume patrol'] = true
 local before = #logs
 keys['F9+CONTROL']()
 pump(1, 0.1)
 assert(not logged('patrol paused: reopening', before), 'own key steps aside while the loader manages it')
-shared['SkiEOMods.keybind.request.ski-patrol.Pause or resume patrol'] = true
+shared['SkiEOMods.keybind.request.ski-patrol-trail-management.Pause or resume patrol'] = true
 pump(1, 0.1)
-assert(Patrol.enabled == false and shared['SkiEOMods.keybind.request.ski-patrol.Pause or resume patrol'] == nil, 'managed pause request')
-shared['SkiEOMods.keybind.request.ski-patrol.Pause or resume patrol'] = true
+assert(Patrol.enabled == false and shared['SkiEOMods.keybind.request.ski-patrol-trail-management.Pause or resume patrol'] == nil, 'managed pause request')
+shared['SkiEOMods.keybind.request.ski-patrol-trail-management.Pause or resume patrol'] = true
 pump(1, 0.1)
 assert(Patrol.enabled == true, 'managed resume request')
-shared['SkiEOMods.enabled.ski-patrol'] = false
+shared['SkiEOMods.enabled.ski-patrol-trail-management'] = false
 pump(1, 0.1)
 assert(Patrol.enabled == false, 'switched off in the Mods menu')
-shared['SkiEOMods.enabled.ski-patrol'] = true
+shared['SkiEOMods.enabled.ski-patrol-trail-management'] = true
 pump(1, 0.1)
 assert(Patrol.enabled == true, 'switched back on')
 
