@@ -1,6 +1,8 @@
 -- The "Ski patrol" section in the game's trail panel (TrailEditWidget): why
--- a run is closed, when the patrol expects to reopen it, and a button to
--- reopen it anyway (or hand it back to the patrol).
+-- a run is closed and when the patrol expects to reopen it, plus one switch per
+-- condition (avalanche, blizzard, thin snow, grooming, cold) that says whether the patrol may
+-- close this run for it. All off until you switch them on. There is no extra open/close
+-- button: the game's own Open/Closed switch is the one to use.
 --
 -- Built the way the Better Trails mod builds its section in the same panel,
 -- which works on this game build: UMG widgets made with StaticConstructObject
@@ -16,7 +18,7 @@ local C = {
     open = {R = 0.45, G = 0.85, B = 0.50, A = 1},
     you = {R = 0.98, G = 0.80, B = 0.35, A = 1},
     button = {R = 0.16, G = 0.18, B = 0.22, A = 1},
-    button_hot = {R = 0.45, G = 0.14, B = 0.12, A = 1},
+    on = {R = 0.10, G = 0.32, B = 0.62, A = 1},
 }
 local TONE = {closed = C.closed, open = C.open, you = C.you, info = C.dim}
 local SIZE = {title = 14, note = 11, button = 12}
@@ -93,22 +95,34 @@ local function inject(w)
     note:SetAutoWrapText(true)
     root:AddChildToVerticalBox(note):SetPadding({Left = 2, Top = 0, Right = 2, Bottom = 3})
 
-    local row = new_widget(tree, 'HorizontalBox')
-    root:AddChildToVerticalBox(row):SetPadding({Left = 0, Top = 0, Right = 0, Bottom = 0})
-    local button = new_widget(tree, 'Button')
-    button:SetBackgroundColor(C.button)
-    local label = new_text(tree, '', SIZE.button, C.text, true)
-    label:SetJustification(1)
-    button:SetContent(label)
-    local slot = row:AddChildToHorizontalBox(button)
-    slot:SetPadding({Left = 2, Top = 0, Right = 2, Bottom = 0})
-    slot:SetSize({Value = 1, SizeRule = 1})
+    -- One switch per condition, two to a row. Collapsed until the panel shows a single known run.
+    local box = new_widget(tree, 'VerticalBox')
+    root:AddChildToVerticalBox(box)
+    local heading = new_text(tree, 'Close this run automatically for:', SIZE.note, C.dim, true)
+    box:AddChildToVerticalBox(heading):SetPadding({Left = 2, Top = 2, Right = 2, Bottom = 2})
+    P.toggles = {}
+    local row
+    for i, reason in ipairs(Panel.Patrol.reasons) do
+        if i % 2 == 1 then
+            row = new_widget(tree, 'HorizontalBox')
+            box:AddChildToVerticalBox(row):SetPadding({Left = 0, Top = 0, Right = 0, Bottom = 3})
+        end
+        local button = new_widget(tree, 'Button')
+        button:SetBackgroundColor(C.button)
+        local label = new_text(tree, reason.label .. ': off', SIZE.button, C.text, true)
+        label:SetJustification(1)
+        button:SetContent(label)
+        local slot = row:AddChildToHorizontalBox(button)
+        slot:SetPadding({Left = 2, Top = 0, Right = 2, Bottom = 0})
+        slot:SetSize({Value = 1, SizeRule = 1})
+        P.toggles[#P.toggles + 1] = {id = reason.id, text = reason.label, button = button, label = label, was = false}
+    end
+    box:SetVisibility(1)
 
-    row:SetVisibility(1)                 -- Collapsed until a run needs the button
     if not place(w, root) then return false end
-    P.owner, P.root, P.note, P.row, P.button, P.label = w, root, note, row, button, label
-    P.was_pressed, P.name, P.status = false, nil, nil
-    P.shown_text, P.shown_tone, P.shown_button = nil, nil, nil
+    P.owner, P.root, P.note, P.box = w, root, note, box
+    P.name, P.status = nil, nil
+    P.shown_text, P.shown_tone, P.shown_key, P.shown_states = nil, nil, nil, nil
     pcall(Panel.refresh)
     Panel.Patrol.log('added a "Ski patrol" section to the trail panel')
     return true
@@ -137,15 +151,17 @@ function Panel.refresh()
         P.note:SetText(FText(text))
         P.note:SetColorAndOpacity({SpecifiedColor = TONE[status.tone] or C.dim, ColorUseRule = 0})
     end
-    local button = status.button
-    if button ~= P.shown_button then
-        P.shown_button = button
-        if button then
-            P.label:SetText(FText(button))
-            P.button:SetBackgroundColor(status.action == 'reopen' and C.button_hot or C.button)
-            P.row:SetVisibility(0)   -- Visible
-        else
-            P.row:SetVisibility(1)   -- Collapsed
+    -- The switches: only for a single known run.
+    local states = {}
+    for _, t in ipairs(P.toggles) do states[#states + 1] = (status.allowed and status.allowed[t.id]) and '1' or '0' end
+    states = (status.key or '') .. ':' .. table.concat(states)
+    if states ~= P.shown_states then
+        P.shown_states = states
+        P.box:SetVisibility(status.key and 0 or 1)       -- 0 Visible, 1 Collapsed
+        for _, t in ipairs(P.toggles) do
+            local on = status.allowed and status.allowed[t.id]
+            t.label:SetText(FText(t.text .. (on and ': on' or ': off')))
+            t.button:SetBackgroundColor(on and C.on or C.button)
         end
     end
 end
@@ -156,13 +172,11 @@ local function shown(w)
     return ok and visible == true
 end
 
-local function click()
+local function click(toggle)
     local status = P.status
     if not status or not status.key then return end
-    local done
-    if status.action == 'reopen' then done = Panel.Patrol.reopen(status.key)
-    elseif status.action == 'resume' then done = Panel.Patrol.resume(status.key) end
-    if done then Panel.refresh() end
+    local now_on = status.allowed and status.allowed[toggle.id]
+    if Panel.Patrol.set_allowed(status.key, toggle.id, not now_on) then Panel.refresh() end
 end
 
 -- Every frame: a click lasts one frame. Cheap while the panel is closed.
@@ -188,21 +202,29 @@ function Panel.poll()
         end
         return
     end
-    if not shown(w) then P.was_pressed = false; P.name = nil; return end
+    if not shown(w) then
+        for _, t in ipairs(P.toggles) do t.was = false end
+        P.name = nil
+        return
+    end
     -- The panel shows another run, or the patrol may have changed something.
     if frame % 15 == 0 or trail_name(w) ~= P.name then
         local ok, failure = pcall(Panel.refresh)
         if not ok and frame % 600 == 0 then Panel.Patrol.log('trail panel: ' .. tostring(failure)) end
     end
-    if not valid(P.button) or not P.shown_button then return end
-    local pressed = P.button:IsPressed()
-    if P.was_pressed and not pressed and P.button:IsHovered() then
-        P.was_pressed = false
-        local ok, failure = pcall(click)
-        if not ok then Panel.Patrol.log('trail panel click: ' .. tostring(failure)) end
-        return
+    if not (P.status and P.status.key) then return end
+    for _, t in ipairs(P.toggles) do
+        if valid(t.button) then
+            local pressed = t.button:IsPressed()
+            if t.was and not pressed and t.button:IsHovered() then
+                t.was = false
+                local ok, failure = pcall(click, t)
+                if not ok then Panel.Patrol.log('trail panel click: ' .. tostring(failure)) end
+                return
+            end
+            t.was = pressed
+        end
     end
-    P.was_pressed = pressed
 end
 
 function Panel.install(Patrol)

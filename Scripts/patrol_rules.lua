@@ -276,6 +276,7 @@ end
 Rules.REASONS = {
     {
         id = 'avalanche',
+        label = 'Avalanche danger',
         enabled = function(cfg) return cfg.avalanche end,
         active = function(run, c)
             local limit = avalanche_pitch(c.cfg, c.danger)
@@ -292,6 +293,7 @@ Rules.REASONS = {
     },
     {
         id = 'storm',
+        label = 'Blizzard',
         enabled = function(cfg) return cfg.storm end,
         active = function(run, c)
             if c.weather.weather ~= 3 then return false end
@@ -304,6 +306,7 @@ Rules.REASONS = {
     },
     {
         id = 'thin_cover',
+        label = 'Thin snow',
         enabled = function(cfg) return cfg.thin_cover end,
         active = function(run, c) return c.cover ~= nil and c.cover < c.cfg.thin_close_cm end,
         -- Without a reading the patrol cannot justify the closure.
@@ -315,6 +318,7 @@ Rules.REASONS = {
     },
     {
         id = 'grooming',
+        label = 'Grooming',
         enabled = function(cfg) return cfg.grooming end,
         active = function(run, c)
             return c.grooming and c.grooming_hours < c.cfg.grooming_max_hours
@@ -325,6 +329,7 @@ Rules.REASONS = {
     },
     {
         id = 'cold',
+        label = 'Extreme cold',
         enabled = function(cfg) return cfg.cold end,
         active = function(run, c) return c.temperature ~= nil and c.temperature <= c.cfg.cold_close_c end,
         clear = function(run, c) return c.temperature == nil or c.temperature >= c.cfg.cold_open_c end,
@@ -354,6 +359,11 @@ Rules.describe = describe
 -- Returns action ('close', 'open' or nil) and a message for the log.
 function Rules.decide(run, c, mem)
     local now = c.now
+    -- Which conditions may close this run: c.allowed is a set of reason ids chosen per run
+    -- (nil = all, for callers that don't have per-run settings).
+    local function on_for(reason)
+        return reason.enabled(c.cfg) and (c.allowed == nil or c.allowed[reason.id] == true)
+    end
     -- Track how long a grooming job has been running on this run.
     if c.grooming_flag ~= nil then
         if c.grooming_flag then mem.groom_since = mem.groom_since or now else mem.groom_since = nil end
@@ -395,7 +405,7 @@ function Rules.decide(run, c, mem)
         local reasons = {}
         local any = false
         for _, reason in ipairs(Rules.REASONS) do
-            if reason.enabled(c.cfg) and reason.active(run, c) then
+            if on_for(reason) and reason.active(run, c) then
                 reasons[reason.id] = {since = now}
                 any = true
             end
@@ -408,7 +418,7 @@ function Rules.decide(run, c, mem)
     -- Closed by the patrol: keep the reasons current, reopen when all clear.
     for _, reason in ipairs(Rules.REASONS) do
         local held = mem.reasons[reason.id]
-        local on = reason.enabled(c.cfg)
+        local on = on_for(reason)
         if on and reason.active(run, c) then
             if held then held.clear_since = nil else mem.reasons[reason.id] = {since = now} end
         elseif held then

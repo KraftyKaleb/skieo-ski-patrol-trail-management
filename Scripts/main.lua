@@ -11,7 +11,7 @@ local Native = require('patrol_native')
 local Store = require('patrol_store')
 local Support = require('modsupport')
 
-local VERSION = '0.3.2'
+local VERSION = '0.4.0'
 local source = debug.getinfo(1, 'S').source:match('^@(.*)$') or ''
 local SCRIPTS = source:match('^(.*[/\\])[^/\\]+$') or './'
 local ROOT = SCRIPTS:match('^(.*[/\\])Scripts[/\\]$') or SCRIPTS
@@ -19,12 +19,15 @@ local Mod = Support.new(SCRIPTS)
 -- Saved outside the mod folder (see modsupport.lua); 0.2.2 and older kept it in the mod folder.
 local STATE_FILE = Mod.state_file('patrol-closures.txt')
 local LEGACY_STATE_FILE = Mod.legacy_file('patrol-closures.txt')
+-- Which conditions may close each run (chosen in the trail panel; all off until you switch them on).
+local SETTINGS_FILE = Mod.state_file('run-settings.txt')
 
 local Patrol = {
     runs = {},          -- per store key: {trail, mem, profile, samples, cover, next_cover}
     events = {},        -- recent log lines for the report
     flags = {},
     tick = 0,
+    settings = {},      -- per store key: {reason id = true}, the conditions that may close that run
 }
 
 local function log(message)
@@ -92,6 +95,7 @@ local function world_changed()
     Patrol.events = {}
     Patrol.last_danger = nil
     Patrol.records = Store.load(STATE_FILE)
+    Patrol.settings = Patrol.load_settings()
     local current = io.open(STATE_FILE, 'r')
     if current then current:close() else Patrol.records = Store.load(LEGACY_STATE_FILE) end   -- first start after 0.2.2
 end
@@ -120,8 +124,53 @@ local function record(key, mem)
     end
 end
 
+-- Per-run conditions. Stored like the closure records: key, nothing, comma-separated reason ids.
+function Patrol.load_settings()
+    local settings = {}
+    for key, record in pairs(Store.load(SETTINGS_FILE)) do
+        local set, any = {}, false
+        for _, id in ipairs(record.reasons) do
+            if Rules.REASON_BY_ID[id] then set[id], any = true, true end
+        end
+        if any then settings[key] = set end
+    end
+    return settings
+end
+
+local function save_settings()
+    local records = {}
+    for key, set in pairs(Patrol.settings) do
+        local ids = {}
+        for id in pairs(set) do ids[#ids + 1] = id end
+        table.sort(ids)
+        if #ids > 0 then records[key] = {reasons = ids} end
+    end
+    if not Store.save(SETTINGS_FILE, records) then log('could not write ' .. tostring(SETTINGS_FILE)) end
+end
+
+-- Switch one condition on or off for one run. Changing a run's settings also ends the
+-- 24-hour break after you reopened it: the new settings are your latest word on it.
+function Patrol.set_allowed(key, id, on)
+    local run = Patrol.runs[key]
+    if not Rules.REASON_BY_ID[id] or not run then return false end
+    local set = Patrol.settings[key] or {}
+    set[id] = on and true or nil
+    Patrol.settings[key] = next(set) and set or nil
+    run.mem.override_until = nil
+    save_settings()
+    remember(string.format('%s: %s %s', name_of(run), Rules.REASON_BY_ID[id].label, on and 'may now close this run' or 'no longer closes this run'))
+    return true
+end
+
+local function allowed_text(key)
+    local set, names = Patrol.settings[key] or {}, {}
+    for _, reason in ipairs(Rules.REASONS) do if set[reason.id] then names[#names + 1] = reason.label:lower() end end
+    return #names > 0 and table.concat(names, ', ') or 'nothing'
+end
+
 local function context(run, now, temperature, grooming)
     return {
+        allowed = Patrol.settings[run.key] or {},
         cfg = Patrol.cfg, now = now, weather = Patrol.weather, danger = Patrol.danger,
         cover = run.cover, temperature = temperature, enabled = Patrol.enabled,
         grooming_flag = grooming, units = Patrol.fmt,
@@ -163,8 +212,8 @@ function Patrol.report()
             else
                 status = 'open'
             end
-            add(string.format('  %s: %.0f° steepest, %s, cover %s. %s', name_of(run), run.profile.pitch_deg,
-                fmt.length(run.profile.length_m), run.cover and fmt.depth(run.cover) or '?', status))
+            add(string.format('  %s: %.0f° steepest, %s, cover %s. Auto-closes for: %s. %s', name_of(run), run.profile.pitch_deg,
+                fmt.length(run.profile.length_m), run.cover and fmt.depth(run.cover) or '?', allowed_text(key), status))
         end
         if #keys == 0 then add('  No runs yet.') end
         if #Patrol.events > 0 then
@@ -217,7 +266,7 @@ function Patrol.step()
         seen[k] = true
         local run = Patrol.runs[k]
         if not run then
-            run = {mem = Rules.new_memory()}
+            run = {mem = Rules.new_memory(), key = k}
             Patrol.runs[k] = run
             local saved = Patrol.records[k]
             if saved and trail.disabled then
@@ -233,6 +282,7 @@ function Patrol.step()
     for k, run in pairs(Patrol.runs) do
         if not seen[k] then
             Patrol.runs[k] = nil
+            if Patrol.settings[k] then Patrol.settings[k] = nil; save_settings() end
             if Patrol.records[k] then Patrol.records[k] = nil; Patrol.dirty = true end
             if run.mem.owned then remember(name_of(run) .. ' was removed while closed') end
         end
@@ -331,19 +381,24 @@ end
 Patrol.game_closure = game_closure
 
 -- What the panel shows for the run called `name`:
--- {text, tone ('closed'|'open'|'you'|'info'), action ('reopen'|'resume'|nil), button}
+-- {text, tone ('closed'|'open'|'you'|'info'), key (the run's store key, nil when there is no single run),
+--  allowed (set of reason ids that may close it)}
+-- The game's own Open/Closed switch is the only open/close button: the patrol notices when you
+-- reopen one of its runs and leaves it alone.
 function Patrol.panel_status(name, game_status)
     local found = runs_named(name or '')
+    local key = #found == 1 and found[1].key or nil
+    local function result(text, tone)
+        return {text = text, tone = tone, key = key, allowed = key and Patrol.settings[key] or {}}
+    end
     local game = game_closure(game_status)
-    if game and not (#found == 1 and found[1].run.trail.disabled) then
-        return {text = game, tone = 'closed', key = found[1] and found[1].key}
-    end
-    if not Patrol.clock then return {text = 'The ski patrol starts once the resort is running.', tone = 'info'} end
-    if #found == 0 then return {text = 'The ski patrol hasn\'t looked at this run yet.', tone = 'info'} end
+    if game and not (#found == 1 and found[1].run.trail.disabled) then return result(game, 'closed') end
+    if not Patrol.clock then return result('The ski patrol starts once the resort is running.', 'info') end
+    if #found == 0 then return result('The ski patrol hasn\'t looked at this run yet.', 'info') end
     if #found > 1 then
-        return {text = 'Two runs are called ' .. name .. '. Rename one to see the patrol\'s status here.', tone = 'info'}
+        return result('Two runs are called ' .. name .. '. Rename one to set up the patrol for it.', 'info')
     end
-    local key, run = found[1].key, found[1].run
+    local run = found[1].run
     local mem, now = run.mem, Patrol.clock.hours
     if run.trail.disabled and mem.owned then
         local c = context(run, now, run.temperature, mem.groom_since ~= nil)
@@ -351,49 +406,28 @@ function Patrol.panel_status(name, game_status)
         local why = Rules.describe(run.trail, c, mem)
         if why == '' then why = 'conditions are being checked' end
         local eta = Rules.reopen_eta(run.trail, c, mem)
-        local when = eta and ('The patrol reopens it in about ' .. hours_text(eta) .. ' of game time.')
-            or 'The patrol keeps it closed while this lasts.'
-        return {text = 'Closed by ski patrol: ' .. why .. '. ' .. when, tone = 'closed', action = 'reopen',
-            button = 'Reopen anyway', key = key}
+        local when = eta and ('It reopens by itself in about ' .. hours_text(eta) .. ' of game time.')
+            or 'It stays closed while this lasts.'
+        return result(string.format('Closed by ski patrol: %s. %s Use the Open/Closed switch above to reopen it now; the patrol then leaves it alone for %g game hours.',
+            why, when, Patrol.cfg.override_hours), 'closed')
     elseif run.trail.disabled then
-        return {text = 'Closed by you. The ski patrol never reopens runs you close.', tone = 'you', key = key}
+        return result('Closed by you. The ski patrol never reopens runs you close.', 'you')
     elseif not Patrol.enabled then
-        return {text = 'Open. The ski patrol is paused (Ctrl+F9 resumes it).', tone = 'info', key = key}
+        return result('Open. The ski patrol is paused (Ctrl+F9 resumes it).', 'info')
     elseif mem.override_until and mem.override_until > now then
-        return {text = string.format('Open. You reopened it, so the ski patrol leaves it alone for another %s.',
-            hours_text(mem.override_until - now)), tone = 'you', action = 'resume',
-            button = 'Let the patrol close it again', key = key}
+        return result(string.format('Open. You reopened it, so the ski patrol leaves it alone for another %s. Changing a condition below hands it back now.',
+            hours_text(mem.override_until - now)), 'you')
+    end
+    local set = Patrol.settings[key] or {}
+    if next(set) == nil then
+        return result('Open. The ski patrol is not set to close this run. Switch on the conditions below that should close it.', 'info')
     end
     local note = ''
-    if Patrol.cfg.thin_cover and not Native.snow_available() then
-        note = ' It does NOT check snow cover: ' .. tostring(Native.snow_problem()) .. '.'
+    if set.thin_cover and Patrol.cfg.thin_cover and not Native.snow_available() then
+        note = ' Thin snow can\'t be checked: ' .. tostring(Native.snow_problem()) .. '.'
     end
-    return {text = string.format('Open. The ski patrol is watching it (%.0f° at its steepest).', 
-        run.profile and run.profile.pitch_deg or 0) .. note, tone = 'open', key = key}
-end
-
--- The panel's buttons. Both run on the game thread, like the patrol itself.
-function Patrol.reopen(key)
-    local run = Patrol.runs[key]
-    if not run or not run.trail.disabled or not run.mem.owned or not Patrol.clock then return false end
-    local ok, failure = Native.set_disabled(run.trail.id, false)
-    if not ok then log(string.format('could not reopen %s: %s', name_of(run), tostring(failure))); return false end
-    run.trail.disabled = false
-    run.mem.owned, run.mem.reasons, run.mem.closed_at = false, {}, nil
-    run.mem.override_until = Patrol.clock.hours + Patrol.cfg.override_hours
-    remember(string.format('%s reopened by you from the trail panel; the patrol leaves it alone for %g game hours',
-        name_of(run), Patrol.cfg.override_hours))
-    record(key, run.mem)
-    save_records()
-    return true
-end
-
-function Patrol.resume(key)
-    local run = Patrol.runs[key]
-    if not run or not run.mem.override_until then return false end
-    run.mem.override_until = nil
-    remember(name_of(run) .. ' handed back to the patrol')
-    return true
+    return result(string.format('Open. The ski patrol is watching it (%.0f° at its steepest).',
+        run.profile and run.profile.pitch_deg or 0) .. note, 'open')
 end
 
 local function guarded_step()
@@ -461,6 +495,7 @@ function Patrol.install()
         Patrol.enabled and '' or ' (paused by config.lua)'))
 end
 
+Patrol.reasons = Rules.REASONS
 Patrol.install()
 
 -- The "Ski patrol" section in the game's trail panel. Optional: if anything

@@ -159,3 +159,12 @@ assert(Rules.METRIC.temperature(-30) == '-30 °C' and Rules.METRIC.depth(25) == 
 assert(Rules.units('imperial').imperial and not Rules.units('metric').imperial and not Rules.units(nil).imperial)
 local warned = {}
 assert(Rules.config({units = 'furlongs'}, function(m) warned[#warned + 1] = m end).units == 'auto' and #warned == 1, 'bad units setting')
+
+-- Per-run switches: a condition only counts when the run's `allowed` set includes it.
+do
+    local m = Rules.new_memory()
+    assert(Rules.decide(run, ctx({now = 0, temperature = -40, allowed = {}}), m) == nil, 'nothing switched on: nothing closes')
+    assert(Rules.decide(run, ctx({now = 0, temperature = -40, allowed = {grooming = true}}), m) == nil, 'only other conditions on')
+    local a = Rules.decide(run, ctx({now = 0, temperature = -40, allowed = {cold = true}}), m)
+    assert(a == 'close', 'cold switched on closes')
+end

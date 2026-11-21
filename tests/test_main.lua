@@ -131,6 +131,8 @@ add_trail(2, 'Summit Couloir', straight(0, 2400, 300, 200, 100))                
 add_trail(3, 'Ridge', straight(0, 2300, 300, 130, 200), {Difficulty = 2})         -- ~23.4°, expert
 add_trail(4, 'Closed By Me', straight(0, 2300, 300, 250, 300)).bManuallyDisabled = true
 add_trail(5, 'Low Traverse', straight(0, 1600, 300, 40, 400))                     -- thin snow
+-- Never configured: the patrol must leave it alone (every condition is off by default).
+add_trail(6, 'Fresh Run', straight(0, 1600, 300, 40, 500))
 local calls = {}
 local trail_map = object('TrailMapSubsystem', {
     RegisteredTrails = {ForEach = function(_, fn)
@@ -211,14 +213,24 @@ end
 ------------------------------------------------------------------------
 -- Scenario
 ------------------------------------------------------------------------
+-- Per-run switches: runs 1-5 have every condition switched on, run 6 has none.
+local SETTINGS_PATH = MODS_DIR .. 'Ski-E-O-Mod-ski-patrol-run-settings.txt'
+do
+    local f = assert(io.open(SETTINGS_PATH, 'w'))
+    for _, key in ipairs({'1@0,0', '2@0,100', '3@0,200', '4@0,300', '5@0,400'}) do
+        f:write(key, '\t\tavalanche,cold,grooming,storm,thin_cover\n')
+    end
+    f:close()
+end
 local Patrol = start()
-assert(logged('%[Ski Patrol%] 0%.3%.2 loaded'), 'startup message')
+assert(logged('%[Ski Patrol%] 0%.4%.0 loaded'), 'startup message')
 assert(keys.F9 and keys['F9+CONTROL'] and commands.skipatrol, 'hotkeys and console command')
 assert(shared['SkiEOMods.enabled.ski-patrol'] == true, 'live flag published under the folder name')
 
 -- Calm morning: only the thin run closes.
 pump(1)
 assert(closed(5) and not closed(1) and not closed(2) and not closed(3), 'thin cover closes Low Traverse')
+assert(not closed(6) and Patrol.runs['6@0,500'] and not Patrol.runs['6@0,500'].mem.owned, 'a run with no switches on is never closed')
 assert(logged('"Low Traverse" closed: thin snow cover %(15 cm%)'), 'closure logged')
 assert(jobs >= 5, 'snow sampled through the loader DLL')
 local profile = Patrol.runs['2@0,100'].profile
@@ -296,43 +308,61 @@ new_object['/Script/SkiResortSimulator.TrailEditWidget'](panel)
 frames(30)
 local section = edit_tab.children[2]
 assert(section and section.kind == 'VerticalBox' and section.children[1].text == 'Ski patrol', 'section under the switch')
-local note, button_row = section.children[2], section.children[3]
-local button = button_row.children[1]
+local note, box = section.children[2], section.children[3]
+local function toggle(i) local row = box.children[1 + math.ceil(i / 2)]; return row.children[(i - 1) % 2 + 1] end
+local function click_toggle(i) local b = toggle(i); b.pressed, b.hovered = true, true; frames(1); b.pressed = false; frames(1) end
 assert(closed(2), 'couloir closed by the blizzard')
 assert(note.text:find('^Closed by ski patrol: .*blizzard'), 'reason shown: ' .. tostring(note.text))
-assert(button_row.visibility == 0 and button.content.text == 'Reopen anyway', 'reopen button shown')
+assert(#box.children == 4 and box.children[1].text:find('automatically'), 'heading and three rows of switches')
+assert(box.visibility == 0, 'switches shown for a single known run')
+local labels = {'Avalanche danger', 'Blizzard', 'Thin snow', 'Grooming', 'Extreme cold'}
+for i, label in ipairs(labels) do assert(toggle(i).content.text == label .. ': on', 'switch ' .. i .. ': ' .. tostring(toggle(i).content.text)) end
+-- No extra open/closed button: the section holds only the title, the note and the switches.
+assert(#section.children == 3, 'no second open/closed button')
 
--- Reopen anyway: the run opens and the patrol leaves it alone.
-button.pressed, button.hovered = true, true
-frames(1)
-button.pressed = false
-frames(1)
-assert(not closed(2), 'reopened from the panel')
-assert(logged('"Summit Couloir" reopened by you from the trail panel'), 'reopen logged')
-frames(15)
-assert(note.text:find('^Open%. You reopened it'), 'override shown: ' .. tostring(note.text))
-assert(button.content.text == 'Let the patrol close it again')
+-- Reopen with the game's own switch: the patrol leaves the run alone.
+trails[2].bManuallyDisabled = false
+pump(1, 0.5)
+assert(logged('"Summit Couloir": you reopened it'), 'override noticed')
 pump(1, 0.5)
 assert(not closed(2), 'blizzard still on, but the override holds')
+frames(15)
+assert(note.text:find('^Open%. You reopened it'), 'override shown: ' .. tostring(note.text))
 
--- Hand it back: the patrol closes it again in the storm.
-button.pressed = true; frames(1); button.pressed = false; frames(1)
+-- Changing a switch ends the override: with blizzard and avalanche off nothing closes it.
+click_toggle(2)
+assert(toggle(2).content.text == 'Blizzard: off' and toggle(2).background ~= toggle(1).background, 'switch turned off')
+click_toggle(1)
+assert(Patrol.settings['2@0,100'].avalanche == nil and Patrol.settings['2@0,100'].storm == nil)
+pump(2, 0.5)
+assert(not closed(2), 'both conditions off: not closed')
+frames(15)
+assert(note.text:find('^Open'), 'open: ' .. note.text)
+local f = assert(io.open(SETTINGS_PATH)); local text = f:read('a'); f:close()
+assert(text:find('2@0,100\t\tcold,grooming,thin_cover', 1, true), 'saved: ' .. text)
+-- Switch blizzard back on: the patrol closes it again.
+click_toggle(2)
 pump(1, 0.5)
-assert(closed(2), 'patrol closes it again once handed back')
+assert(closed(2) and toggle(2).content.text == 'Blizzard: on', 'patrol closes it again once the condition is on')
+assert(logged('"Summit Couloir" closed: blizzard'))
 frames(15)
 assert(note.text:find('^Closed by ski patrol'), 'closed again')
+-- Switch it off while the patrol holds the run closed: it reopens.
+click_toggle(2)
+pump(2, 0.5)
+assert(toggle(2).content.text == 'Blizzard: off')
 
--- A run you closed: no button.
+-- A run you closed: switches are still available for it, the note says it's yours.
 name_label.text = 'Closed By Me'
 frames(1)
-assert(note.text:find('^Closed by you') and button_row.visibility == 1, 'player closure: no button')
--- The game's own closures: shown, no button (the patrol can't open them).
+assert(note.text:find('^Closed by you'), 'player closure')
+-- The game's own closures: shown, the patrol can't open them.
 local status_label = widget('TextBlock', {text = 'Closed: not enough snow'})
 panel.TrailStatusLabel = status_label
 name_label.text = 'Bunny Hill'
 frames(1)
 assert(not closed(1), 'not a manual closure')
-assert(note.text:find('^Closed by the game: not enough snow') and button_row.visibility == 1, 'no-snow closure: ' .. note.text)
+assert(note.text:find('^Closed by the game: not enough snow'), 'no-snow closure: ' .. note.text)
 status_label.text = 'Closed: avalanche danger'
 frames(15)
 assert(note.text:find('^Closed by the game: avalanche danger'), 'avalanche closure shown')
@@ -344,11 +374,31 @@ frames(15)
 assert(note.text:find('^Open%.'), 'open again: ' .. note.text)
 assert(Patrol.game_closure('Closed by you') == nil and Patrol.game_closure('Open') == nil)
 assert(Patrol.game_closure('[Closed: No Snow] ') and Patrol.game_closure('Closed: something new'):find('something new'))
+-- A run never configured shows every switch off; clicking turns one on.
+name_label.text = 'Fresh Run'
+frames(1)
+assert(toggle(3).content.text == 'Thin snow: off' and note.text:find('not set to close'), 'default off: ' .. note.text)
+click_toggle(3)
+assert(toggle(3).content.text == 'Thin snow: on')
+snow_depth = function() return 15 end
+for _ = 1, 20 do pump(1, 0.1) end
+assert(closed(6) and logged('"Fresh Run" closed: thin snow'), 'closes once switched on')
+click_toggle(3)
+pump(2, 1)
+assert(not closed(6), 'switched off again: the patrol hands it back')
+snow_depth = function() return 120 end
+-- A run with several matches or none has no switches.
+name_label.text = 'Nowhere'
+frames(1)
+assert(box.visibility == 1, 'switches hidden for an unknown run')
+name_label.text = 'Summit Couloir'
+frames(1)
 -- A hidden panel takes no clicks.
 panel.visibility = 1
-button.pressed, button.hovered = true, true; frames(1); button.pressed = false; frames(1)
+local b = toggle(5); b.pressed, b.hovered = true, true; frames(1); b.pressed = false; frames(1)
 panel.visibility = 0
-button.hovered = false
+b.hovered = false
+assert(Patrol.settings['2@0,100'].cold == true, 'hidden panel: no change')
 
 -- Pausing time stops the patrol.
 game.paused = true
@@ -369,7 +419,7 @@ assert(closed(4), 'but not yours')
 logs = {}
 keys.F9()
 pump(1, 0.1)
-assert(logged('Report %(version 0%.3%.2%) %(patrol paused%)'), 'report header')
+assert(logged('Report %(version 0%.4%.0%) %(patrol paused%)'), 'report header')
 assert(logged('"Closed By Me": .* closed by you'), 'report lists player closure')
 assert(logged('Snow cover readings: available'), 'report shows sampler')
 local out = {}

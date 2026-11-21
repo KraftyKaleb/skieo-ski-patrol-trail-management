@@ -34,21 +34,27 @@ see Changes below).
 **Your closures win.** The patrol never opens a run you closed. If you reopen a
 run the patrol closed, it leaves that run alone for 24 game hours.
 
-**In the trail panel.** Open a run's panel and look under the game's Open/Closed
-switch for the **Ski patrol** section. It says why the patrol closed the run and
-roughly when it expects to reopen it, for example *Closed by ski patrol: blizzard:
-high wind and poor visibility. The patrol keeps it closed while this lasts.*
+**Per-run switches (all off by default).** The patrol only closes a run for a
+condition you switched on for that run. Open a run's panel and look under the game's
+Open/Closed switch for the **Ski patrol** section. Under *Close this run automatically
+for:* there is one switch each for avalanche danger, blizzard, thin snow, grooming and
+extreme cold; click one to turn it on or off. The choices are kept in
+`%LOCALAPPDATA%\Ski-E-O-Mod-ski-patrol-run-settings.txt`, outside the mod folder, so updates keep them.
 
-- **Reopen anyway** opens a run the patrol closed. The patrol then leaves it alone
-  for 24 game hours (`override_hours`). Using the game's own Open/Closed switch
-  does the same thing.
-- **Let the patrol close it again** shows on a run you reopened. It ends that
-  24-hour break, so the patrol can close the run again on its next check if
-  conditions are still bad.
-- Runs you closed yourself say so and have no button.
+There is no extra open/close button: **the game's own Open/Closed switch is the one to use.**
+The section's text says why the patrol closed the run and roughly when it expects to reopen it,
+for example *Closed by ski patrol: blizzard: high wind and poor visibility.* If you reopen a run
+the patrol closed with the game's switch, the patrol leaves it alone for 24 game hours
+(`override_hours`); changing one of that run's switches ends that break.
+
+- Switching a condition off while the patrol holds the run closed for it lets the patrol reopen the run
+  (after the usual 0.5 game hours minimum).
+- Runs you closed yourself are never touched and say so.
 - Runs the **game itself** closed (since build CL8198 it closes runs for *not enough
-  snow* or *avalanche danger*, and roped-off runs) say so too, with no button: those
-  aren't the switch the patrol uses, and the game reopens them by itself.
+  snow* or *avalanche danger*, and roped-off runs) say so too: the patrol can't reopen them,
+  and the game does it by itself.
+- If two runs share a name, the switches are hidden; rename one.
+- The `avalanche`, `storm`, `thin_cover`, `grooming` and `cold` settings in `config.lua` still turn a rule off for every run.
 
 **Restarts.** The patrol remembers which closures were its own and the new-snow
 model in `%LOCALAPPDATA%\Ski-E-O-Mod-ski-patrol-patrol-closures.txt`, outside the mod folder so updates keep it (0.2.2 and older kept `patrol-closures.txt` in the mod folder; it is read once and then left alone). After you load a save, it still
@@ -65,7 +71,7 @@ reopens its runs when conditions recover.
 Every closure and reopening goes in the log with its reason. A report looks like this:
 
 ```text
-[Ski Patrol] Report (version 0.3.2)
+[Ski Patrol] Report (version 0.4.0)
 [Ski Patrol]   Weather: blizzard, -9 °C at the top. New snow (model): 25 cm. Avalanche danger: 3 (considerable).
 [Ski Patrol]   Snow cover readings: available (ok)
 [Ski Patrol]   "Bunny Hill": 6° steepest, 300 m, cover 120 cm. open
@@ -136,7 +142,7 @@ game's trail, time, weather, grooming and snow systems) and checked with automat
 tests against a fake game. The snow reader's fingerprints were confirmed against the
 CL8198 `skieogame.exe`, but its memory reads have only run against a fake snow cache. **It hasn't run inside Ski-E-O! yet.** Please check:
 
-1. **Startup:** the UE4SS log shows `[Ski Patrol] 0.3.2 loaded`.
+1. **Startup:** the UE4SS log shows `[Ski Patrol] 0.4.0 loaded`.
 2. **The report:** press F9 in a resort. Each run should be listed with a believable
    steepness and length, and the weather should match the game's. If no runs are
    listed or you see `[Ski Patrol] error:`, send the log lines.
@@ -151,8 +157,9 @@ CL8198 `skieogame.exe`, but its memory reads have only run against a fake snow c
 7. **Save and load** with a patrol closure, then confirm it still reopens later.
 8. **Trail panel:** open a run the patrol closed. The Ski patrol section should sit
    under the Open/Closed switch (or at the end of the Edit tab) with the reason.
-   Click **Reopen anyway**, check the run opens and the text changes, then click
-   **Let the patrol close it again**.
+   Switch a condition on for that run, then reopen the run with the game's Open/Closed
+   switch and check the text changes. Switch conditions off and on again and check
+   the labels and the saved `run-settings.txt` follow.
 
 ## How it works
 
@@ -186,6 +193,11 @@ two runs with the same name show a note asking you to rename one.
 License: MIT.
 
 ## Changes
+
+**0.4.0** Per-run switches in the trail panel for which conditions may close that run, all
+off by default (so after updating, nothing closes until you switch conditions on for each run).
+The extra Reopen / "Let the patrol close it again" button is gone; use the game's Open/Closed switch.
+Settings are saved in `run-settings.txt` next to the closure memory.
 
 **0.3.2** The game build is CL8198 (earlier notes said CL8119 by mistake): `mod.ini`
 `GameVersion` and the README now say so. No code changed. The snow reader never checked
