@@ -1,0 +1,11 @@
+LIBRARY kernel32.dll
+EXPORTS
+GetModuleHandleW
+GetModuleFileNameW
+GetEnvironmentVariableW
+VirtualQuery
+CreateFileW
+ReadFile
+WriteFile
+CloseHandle
+DeleteFileW
